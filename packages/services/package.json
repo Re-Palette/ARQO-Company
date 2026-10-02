@@ -1,0 +1,30 @@
+{
+  "name": "@friday/services",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@friday/ai": "workspace:*",
+    "@friday/backup": "workspace:*",
+    "@friday/contracts": "workspace:*",
+    "@friday/core": "workspace:*",
+    "@friday/db": "workspace:*",
+    "@friday/notify": "workspace:*",
+    "@friday/vault": "workspace:*",
+    "drizzle-orm": "^0.44",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "postgres": "^3.4.9",
+    "typescript": "^5",
+    "vitest": "^3"
+  }
+}

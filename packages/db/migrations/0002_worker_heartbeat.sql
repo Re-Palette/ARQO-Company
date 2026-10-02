@@ -1,0 +1,1 @@
+ALTER TABLE "company_settings" ADD COLUMN "worker_heartbeat_at" timestamp with time zone;
