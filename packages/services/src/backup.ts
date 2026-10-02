@@ -14,8 +14,11 @@ import { notify } from "./notifications";
 
 const run = promisify(execFile);
 
+/** Count tracked notes. Pinned to `cwd`'s own .git so it can never read a parent repository. */
 async function countMarkdown(cwd: string): Promise<number> {
-  const { stdout } = await run("git", ["ls-files", "*.md"], { cwd, maxBuffer: 64 * 1024 * 1024 });
+  const { stdout } = await run("git", ["ls-files", "*.md"], {
+    cwd, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_DIR: join(cwd, ".git"), GIT_WORK_TREE: cwd },
+  });
   return stdout.split("\n").filter(Boolean).length;
 }
 

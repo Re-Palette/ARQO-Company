@@ -9,10 +9,10 @@
 
 | 指標 | 結果 |
 |---|---|
-| 完了条件（ブラウザ E2E） | **18 / 18 チェック合格**（完了条件10項目＋追加検証8項目） |
+| 完了条件（ブラウザ E2E） | **18 / 18 チェック合格**（完了条件10項目を15チェックで検証＋追加検証3チェック） |
 | 単体・統合テスト | **48 / 48 合格**（7パッケージ。統合テストは実 Postgres 上で全フローを実行） |
 | typecheck / lint | 10 / 10 パッケージ合格・lint エラー 0 |
-| 本番ビルド | `next build` 成功（API 37 ルート + 6 画面） |
+| 本番ビルド | `next build` 成功（`/api/v1` 36 ルート＋開発用 1 ルート、6 画面） |
 
 ![CEO ACTION REQUIRED が最上部に表示されたダッシュボード](./screenshots/03-dashboard-action-required.png)
 
@@ -65,7 +65,7 @@ ARQO-Company/
 │   │       │   ├── login/ auth/callback/
 │   │       │   ├── projects/ agents/ reports/ settings/
 │   │       │   └── api/
-│   │       │       ├── v1/…         REST API（37ルート）
+│   │       │       ├── v1/…         REST API（36ルート）
 │   │       │       └── dev/dummy-universal-ai/
 │   │       ├── components/{ui,dashboard,shell}/
 │   │       ├── lib/{auth,api,client-api,utils}.ts
@@ -124,7 +124,7 @@ ARQO-Company/
 | S4 | `report_archives` は `content_sha256` を必須、PDF 関連列は任意 | Phase 0 のレポートは Markdown（PDF は Phase 4） | Phase 4 で PDF 列を必須化 |
 | S5 | `reports.content_md` を追加 | 承認対象の本文を DB に保持し、ハッシュで固定するため | 採用 |
 | S6 | `webhook_subscriptions.secret_ref` は `env:NAME` 形式のみ | Webhook 秘密鍵を DB に保存しないため | 採用 |
-| S7 | Personal プロジェクトは ARQO の外（ルート）に配置 | ご指示のツリーに含まれていなかったため | ARQO 配下にすべきならご指示ください |
+| S7 | Personal プロジェクトは ARQO の外（ルート）に配置 | ご指示のツリーに含まれていなかったため | **確定**（CEO 判断: 現状どおり ARQO の外） |
 
 ---
 
@@ -196,9 +196,17 @@ ARQO-Company/
 **対応**:
 - `origin` を `https://github.com/Re-Palette/ARQO-Company` に戻し、誤って追加された git ユーザー設定を削除しました。
 - コミット `f82f5a7` の取り消し（履歴の書き換え）と git-lfs フックの削除は、実行環境の安全確認でブロックされたため**行っていません**。`f82f5a7` は本来の Phase 0 コードのみを含むため、その上に通常のコミットを重ねて push しています（履歴上、Phase 0 のコードが2つのコミットに分かれ、1つ目のコミットメッセージが Vault 用の文言になっています）。気になる場合は PR 作成時に squash merge をお勧めします。ローカルの git-lfs フック（`.git/hooks/`）は無害ですが、不要であれば削除してください。
-- **再発防止**: Vault の Git 操作は常に `GIT_DIR`/`GIT_WORK_TREE` を Vault 自身に固定し、Vault が親リポジトリの中にあっても親に一切書き込まないことを回帰テストで保証しました。あわせて、Web と Worker の同時書き込みを Postgres アドバイザリロックで直列化しました。
+- **再発防止**: Vault の Git 操作（`packages/vault/src/git.ts` とバックアップのノート数照合）は常に `GIT_DIR`/`GIT_WORK_TREE` を Vault 自身に固定し、Vault が親リポジトリの中にあっても親に一切書き込まないことを回帰テストで保証しました。あわせて、Web と Worker の同時書き込みを Postgres アドバイザリロックで直列化しました。
 
 ---
+
+## CEO 判断の記録（Phase 0 確定時）
+
+| 項目 | 判断 |
+|---|---|
+| Personal の配置 | ARQO の外（ルート）で確定 |
+| Gemini モデル設定 | 現状維持（fast: `gemini-3.1-flash-lite` / standard・deep: `gemini-3.8-flash`）。モデル ID は `model_routes` テーブルのデータで、コード変更なしに変更可能 |
+| コミット `f82f5a7` | 履歴は書き換えず現状維持 |
 
 ## 6. 未実装項目
 
