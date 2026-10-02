@@ -2,6 +2,9 @@ import { redirect } from "next/navigation";
 import { authMode, getSession } from "@/lib/auth";
 import { LoginForm } from "./login-form";
 
+// Auth mode and session are request-time decisions.
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage() {
   if (await getSession()) redirect("/");
   const mode = authMode();

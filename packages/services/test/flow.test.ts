@@ -39,6 +39,8 @@ beforeAll(async () => {
   remote = await mkdtemp(join(tmpdir(), "friday-remote-"));
   execFileSync("git", ["init", "--bare", "-b", "main", remote]);
   ctx = buildContext(db, vaultRoot, { WEBHOOK_SECRET: "whsec" }, remote);
+  // A normal write before the first sync must still land in the vault's own repo.
+  await registerAgent(ctx, { id: "early-bird", displayName: "Early", title: "x", divisionId: "operations" });
   await syncVault(ctx);
 }, 60_000);
 
@@ -185,7 +187,7 @@ describe("Phase 0 flow", () => {
 
   it("serves the dashboard in one call", async () => {
     const d = await getDashboard(ctx);
-    expect(d.agents.length).toBe(4);
+    expect(d.agents.length).toBe(5);
     expect(d.projects.length).toBe(8);
     expect(d.timeline.length).toBeGreaterThan(5);
     expect(d.kpis.headline).toHaveLength(5);

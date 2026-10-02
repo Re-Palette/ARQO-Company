@@ -46,3 +46,25 @@ describe("scaffold + git", () => {
     expect(await readFile(join(root, "README.md"), "utf8")).toContain("ARQO");
   });
 });
+
+describe("git isolation", () => {
+  it("never commits into a parent repository when the vault is nested inside one", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "app-"));
+    execFileSync("git", ["init", "-q", "-b", "main", parent]);
+    execFileSync("git", ["-C", parent, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "app"]);
+    const root = join(parent, ".data", "vault");
+    const store = new FileSystemVaultStore(root);
+    await store.ensureDir(".");
+    const git = new GitSync({ root, remote: "/nonexistent/remote.git" });
+    await git.init();
+    await scaffoldVault(store, "X");
+    const result = await git.commitAll("friday: scaffold");
+    expect(result.committed).toBe(true);
+    expect(result.pushed).toBe(false);
+    const parentLog = execFileSync("git", ["-C", parent, "log", "--oneline"]).toString().trim().split("\n");
+    expect(parentLog).toHaveLength(1);
+    expect(execFileSync("git", ["-C", parent, "remote"]).toString().trim()).toBe("");
+    // `git config --get` exits non-zero when the key is absent: no identity was written to the parent.
+    expect(() => execFileSync("git", ["-C", parent, "config", "--local", "--get", "user.name"], { stdio: "ignore" })).toThrow();
+  });
+});

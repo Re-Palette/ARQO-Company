@@ -36,7 +36,7 @@ export default async function SettingsPage() {
               {Object.entries(providers.resolution).map(([tier, r]) => (
                 <div key={tier} className="rounded-md border border-border p-2">
                   <p className="font-semibold">{tier}</p>
-                  <p className="text-live">{r.chain.join(" → ") || "利用可能なルートなし"}</p>
+                  <p className={r.chain.length ? "text-live" : "text-warn"}>{r.chain.join(" → ") || "利用可能なルートなし（APIキー未設定）"}</p>
                   {r.skipped.map((s) => <p key={s} className="text-muted-foreground">skip: {s}</p>)}
                 </div>
               ))}

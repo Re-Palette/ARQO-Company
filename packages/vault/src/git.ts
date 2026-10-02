@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
@@ -26,20 +28,29 @@ export interface CommitResult {
  */
 export class GitSync {
   private readonly branch: string;
+  private readonly root: string;
 
   constructor(private readonly opts: GitSyncOptions) {
     this.branch = opts.branch ?? "main";
+    this.root = resolve(opts.root);
   }
 
+  /**
+   * Every command is pinned to the vault's own repository. GIT_DIR and
+   * GIT_WORK_TREE stop git from walking up into a parent repository (e.g.
+   * when the vault lives inside an application checkout).
+   */
   private git(args: string[]) {
-    return run("git", args, { cwd: this.opts.root, maxBuffer: 16 * 1024 * 1024 });
+    return run("git", args, {
+      cwd: this.root,
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, GIT_DIR: join(this.root, ".git"), GIT_WORK_TREE: this.root },
+    });
   }
 
   async init(): Promise<void> {
-    try {
-      await this.git(["rev-parse", "--is-inside-work-tree"]);
-    } catch {
-      await this.git(["init", "-b", this.branch]);
+    if (!existsSync(join(this.root, ".git"))) {
+      await run("git", ["init", "-q", "-b", this.branch, this.root]);
     }
     await this.git(["config", "user.name", this.opts.authorName ?? "F.R.I.D.A.Y."]);
     await this.git(["config", "user.email", this.opts.authorEmail ?? "friday@localhost"]);

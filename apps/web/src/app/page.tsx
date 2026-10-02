@@ -35,9 +35,12 @@ function Kpi({ icon: Icon, label, value, sub, accent }: { icon: typeof Users; la
 export default async function HomePage() {
   const d = await getDashboard(getContext());
   const { kpis } = d;
-  const childrenOf = (slug: string | null) => d.projects.filter((p) => p.parentSlug === slug);
+  // Project tree of any depth (ARQO → Future Ventures → ARQO Labs …), driven only by data.
+  const childrenOf = (slug: string) => d.projects.filter((p) => p.parentSlug === slug);
   const roots = d.projects.filter((p) => !p.parentSlug || !d.projects.some((x) => x.slug === p.parentSlug));
-  const ordered = roots.flatMap((r) => [{ p: r, depth: 0 }, ...childrenOf(r.slug).map((c) => ({ p: c, depth: 1 }))]);
+  const walk = (p: (typeof d.projects)[number], depth: number): { p: typeof p; depth: number }[] =>
+    [{ p, depth }, ...childrenOf(p.slug).flatMap((c) => walk(c, depth + 1))];
+  const ordered = roots.flatMap((r) => walk(r, 0));
 
   return (
     <AppShell active="/" title={

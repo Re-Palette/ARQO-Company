@@ -16,22 +16,43 @@ export class VaultService {
   private chain: Promise<unknown> = Promise.resolve();
   private initialized: Promise<void> | null = null;
 
-  constructor(root: string, remote?: string) {
+  /**
+   * @param crossProcessLock serializes vault work across processes (web + worker),
+   *   e.g. a Postgres advisory lock. In-process work is serialized by a promise chain.
+   */
+  constructor(root: string, remote?: string, private readonly crossProcessLock?: <T>(fn: () => Promise<T>) => Promise<T>) {
     this.store = new FileSystemVaultStore(root);
     this.git = new GitSync({ root, remote });
   }
 
+  private repoReady: Promise<void> | null = null;
+
+  /** The vault's own git repository must exist before any write or commit. */
+  private ensureRepo(): Promise<void> {
+    this.repoReady ??= (async () => {
+      await this.store.ensureDir(".");
+      await this.git.init();
+    })().catch((e) => {
+      this.repoReady = null;
+      throw e;
+    });
+    return this.repoReady;
+  }
+
   /** Serialize a unit of vault work. */
   exclusive<T>(fn: () => Promise<T>): Promise<T> {
-    const next = this.chain.then(fn, fn);
+    const work = async () => {
+      await this.ensureRepo();
+      return fn();
+    };
+    const locked = this.crossProcessLock ? () => this.crossProcessLock!(work) : work;
+    const next = this.chain.then(locked, locked);
     this.chain = next.catch(() => undefined);
     return next;
   }
 
   ensureInitialized(companyName: string): Promise<void> {
     this.initialized ??= this.exclusive(async () => {
-      await this.store.ensureDir(".");
-      await this.git.init();
       await scaffoldVault(this.store, companyName);
     });
     return this.initialized;
