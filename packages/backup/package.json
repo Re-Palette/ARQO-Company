@@ -1,0 +1,22 @@
+{
+  "name": "@friday/backup",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@friday/core": "workspace:*",
+    "aws4fetch": "^1"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "vitest": "^3",
+    "@types/node": "^22"
+  }
+}

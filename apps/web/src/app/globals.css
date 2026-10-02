@@ -1,0 +1,85 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* F.R.I.D.A.Y. design tokens (docs/design/17-dashboard.md 17.5). Dark "HQ" theme. */
+:root {
+  --radius: 0.75rem;
+  --background: #070b14;
+  --foreground: #e6ecf5;
+  --card: rgba(16, 24, 40, 0.72);
+  --card-foreground: #e6ecf5;
+  --popover: #0d1424;
+  --popover-foreground: #e6ecf5;
+  --primary: #4c8dff;
+  --primary-foreground: #f8fbff;
+  --secondary: #1a2438;
+  --secondary-foreground: #e6ecf5;
+  --muted: #141d2f;
+  --muted-foreground: #8a97ad;
+  --accent: #1c2a44;
+  --accent-foreground: #e6ecf5;
+  --destructive: #ff4d5e;
+  --border: rgba(120, 160, 255, 0.14);
+  --input: rgba(120, 160, 255, 0.10);
+  --ring: #4c8dff;
+  --live: #22d3a6;
+  --info: #4c8dff;
+  --warn: #f5a524;
+  --critical: #ff4d5e;
+  --gold: #e9b872;
+  --repalette: #f2a7c3;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-live: var(--live);
+  --color-info: var(--info);
+  --color-warn: var(--warn);
+  --color-critical: var(--critical);
+  --color-gold: var(--gold);
+  --color-repalette: var(--repalette);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, sans-serif;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "tnum";
+    background-image:
+      radial-gradient(1200px 500px at 70% -10%, rgba(233, 184, 114, 0.10), transparent 60%),
+      radial-gradient(900px 500px at 10% 0%, rgba(76, 141, 255, 0.10), transparent 60%);
+    background-attachment: fixed;
+  }
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(255, 77, 94, 0.45); }
+  100% { box-shadow: 0 0 0 14px rgba(255, 77, 94, 0); }
+}
+.glow-critical { animation: pulse-ring 2s ease-out 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .glow-critical, .animate-pulse { animation: none; }
+}

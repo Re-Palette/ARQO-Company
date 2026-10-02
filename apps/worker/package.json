@@ -1,0 +1,22 @@
+{
+  "name": "@friday/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@friday/core": "workspace:*",
+    "@friday/services": "workspace:*",
+    "croner": "^9"
+  },
+  "devDependencies": {
+    "tsx": "^4",
+    "typescript": "^5",
+    "vitest": "^3",
+    "@types/node": "^22"
+  }
+}
