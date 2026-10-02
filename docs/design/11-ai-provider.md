@@ -35,18 +35,33 @@ flowchart TB
 リクエスト: `messages, system, tier, purpose, agentId, runId, sensitivity, maxOutputTokens, temperature, timeoutMs`
 レスポンス: `text | object | toolCalls, usage, model, provider, finishReason, latencyMs`
 
-## 11.4 ルーティング表（設定画面で編集）
+## 11.4 ルーティング表とコスト方針（設定画面で編集）
 
-| tier | 初期（Gemini） | fallback | 切替後（Claude） |
+**方針: 基本は Flash-Lite、必要なときだけ Flash。** 低コスト・無料枠の最大活用を優先する（2026-10 CEO 決定）。
+
+| route（tier） | Gemini 初期値 | fallback | 用途 |
 |---|---|---|---|
-| `fast` | Flash-Lite 系 | Flash 系 | Haiku 系 |
-| `standard` | Flash 系 | Flash-Lite 系 | Sonnet 系 |
-| `deep` | Pro 系 | Flash 系 | Opus 系 |
-| `embedding` | Gemini Embedding 系 | — | （Claude は埋め込み非提供のため別プロバイダ継続） |
+| `fast` | `gemini-3.5-flash-lite` | なし | 会話・Agent 間通信・Activity / Notification 生成・要約・分類・定型 Report・Dashboard の軽量判断 |
+| `standard` | `gemini-3.5-flash-lite` | なし | 同上（将来の差別化用に tier だけ分けておく） |
+| `deep` | `gemini-3.5-flash-lite` | なし | 同上。deep tier であること自体では上位モデルにしない |
+| `escalation` | `gemini-3.8-flash` | `fast`（Flash-Lite） | 下記の**理由がある場合のみ** |
+| `embedding` | （Phase 2） | — | |
 
-- 具体モデルIDは `model_routes.model_id`（Phase 0 のシード時に最新公開モデルを確認して設定）。
-- 解決順: `agents.model_override` → `model_routes(tier)` → fallback。
-- **Provider Preset**: `Gemini Free` / `Claude` / `Hybrid（COOのみClaude）` をワンクリックで切替。
+**上位モデルへの切替（escalation）**: Router は次の理由のときだけ `escalation` ルートを使う。理由と閾値はそのルートの `params.escalation`（DB）で有効/無効を切り替える。ルートを `active=false` にすれば上位モデルは一切使われない。
+
+| 理由 | 発生条件 |
+|---|---|
+| `long_document` | 入力が `long_input_chars`（初期 40,000 文字）を超えたとき（自動判定） |
+| `complex_reasoning` / `cross_source_analysis` | 呼び出し側が明示 |
+| `ceo_deep_request` | CEO が Deep 処理を明示的に要求したとき |
+| `low_confidence` | 構造化出力が Flash-Lite でスキーマ不一致、または呼び出し側の判定（`escalateIf`）で不十分なとき、1 回だけ再実行 |
+
+- Flash-Lite の各ルートには fallback を設定しない（無料枠の 429 で黙って上位モデルへ流れない）。上位モデルが失敗した場合は Flash-Lite に戻る。
+- 上位モデルを使った呼び出しは `llm_usage.purpose` に `#escalated:<理由>` を付けて記録し、コストを追跡できるようにする。
+- 具体モデル ID は `model_routes.model_id`、プロバイダは `provider_configs`（Provider と Model は分離）。コードにモデル ID は書かない。
+- シードは既存の設定値を上書きしない（`onConflictDoNothing`）。既存 DB の変更は設定値の更新で行う。
+- 解決順: `agents.model_override` → `model_routes(tier)`（理由があれば `escalation`）→ fallback。
+- **Provider Preset**: `Gemini Free` / `Claude` / `Hybrid（COOのみClaude）` をワンクリックで切替（Phase 7）。
 
 ## 11.5 データ機密区分によるルーティング
 

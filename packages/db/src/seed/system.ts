@@ -81,11 +81,28 @@ export const providerConfigs = [
     dataPolicy: "local", priority: 0 },
 ];
 
-/** Tier → model. Model IDs are data; verify against the provider's current list. */
+/**
+ * Tier → model (data, not code; verify IDs against the provider's current list).
+ *
+ * Cost policy: Flash-Lite is the company's standard model for every tier, with
+ * no fallback to a stronger model (a free-tier 429 must not silently cost more).
+ * The stronger model sits on the "escalation" route and is used only when the
+ * router has an enabled reason; if it fails, it falls back to Flash-Lite.
+ */
 export const modelRoutes = [
-  { id: "route_gemini_fast", tier: "fast", providerConfigId: "gemini", modelId: "gemini-3.1-flash-lite", fallbackRouteId: null },
-  { id: "route_gemini_standard", tier: "standard", providerConfigId: "gemini", modelId: "gemini-3.8-flash", fallbackRouteId: "route_gemini_fast" },
-  { id: "route_gemini_deep", tier: "deep", providerConfigId: "gemini", modelId: "gemini-3.8-flash", fallbackRouteId: "route_gemini_standard" },
+  { id: "route_gemini_fast", tier: "fast", providerConfigId: "gemini", modelId: "gemini-3.5-flash-lite", fallbackRouteId: null },
+  { id: "route_gemini_standard", tier: "standard", providerConfigId: "gemini", modelId: "gemini-3.5-flash-lite", fallbackRouteId: null },
+  { id: "route_gemini_deep", tier: "deep", providerConfigId: "gemini", modelId: "gemini-3.5-flash-lite", fallbackRouteId: null },
+  {
+    id: "route_gemini_escalation", tier: "escalation", providerConfigId: "gemini", modelId: "gemini-3.8-flash",
+    fallbackRouteId: "route_gemini_fast",
+    params: {
+      escalation: {
+        reasons: ["long_document", "complex_reasoning", "cross_source_analysis", "ceo_deep_request", "low_confidence"],
+        long_input_chars: 40000,
+      },
+    },
+  },
   { id: "route_mock", tier: "mock", providerConfigId: "mock", modelId: "mock-1", fallbackRouteId: null },
 ];
 

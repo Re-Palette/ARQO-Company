@@ -3,9 +3,10 @@ import type { DataSensitivity } from "@friday/core";
 import { getAdapter } from "./registry";
 import { RateLimiter } from "./rate-limit";
 import type {
-  AdapterCall, GenerateRequest, GenerateResult, ModelRoute, ObjectResult, ProviderConfig, RouteStore, UsageRecorder,
+  AdapterCall, EscalationPolicy, EscalationReason, GenerateRequest, GenerateResult, ModelRoute, ObjectResult,
+  ProviderConfig, RouteStore, UsageRecorder,
 } from "./types";
-import { ProviderError, RoutingError } from "./types";
+import { ESCALATION_REASONS, ESCALATION_TIER, ProviderError, RoutingError } from "./types";
 
 export interface AIClientOptions {
   routes: RouteStore;
@@ -19,6 +20,28 @@ export interface AIClientOptions {
 interface ResolvedRoute {
   route: ModelRoute;
   provider: ProviderConfig;
+}
+
+type RouteData = Awaited<ReturnType<RouteStore["load"]>>;
+
+const DEFAULT_LONG_INPUT_CHARS = 40_000;
+
+/** Escalation policy of the active escalation route, or null when escalation is off. */
+export function escalationPolicy(routes: ModelRoute[]): EscalationPolicy | null {
+  const route = routes.find((r) => r.tier === ESCALATION_TIER && r.active);
+  if (!route) return null;
+  const raw = (route.params?.escalation ?? {}) as { reasons?: string[]; long_input_chars?: number };
+  return {
+    reasons: (raw.reasons ?? [...ESCALATION_REASONS]).filter((r): r is EscalationReason =>
+      (ESCALATION_REASONS as readonly string[]).includes(r)),
+    longInputChars: raw.long_input_chars ?? DEFAULT_LONG_INPUT_CHARS,
+  };
+}
+
+/** Router-only keys that must never reach a provider request body. */
+function providerParams(params: Record<string, unknown> | undefined): Record<string, unknown> {
+  const { escalation: _policy, ...rest } = params ?? {};
+  return rest;
 }
 
 /** Which provider data policies may receive data of a given sensitivity. */
@@ -45,7 +68,29 @@ export class AIClient {
     return this.run(req, async (adapter, call) => adapter.generateText(call), (r) => r);
   }
 
-  async generateObject<T>(req: GenerateRequest & { schema: z.ZodType<T>; schemaName?: string }): Promise<ObjectResult<T>> {
+  /**
+   * Structured output. On the default model, a response that does not match
+   * the schema — or that `escalateIf` judges not good enough — is retried once
+   * on the escalation route as "low_confidence" (if that reason is enabled).
+   */
+  async generateObject<T>(
+    req: GenerateRequest & { schema: z.ZodType<T>; schemaName?: string; escalateIf?: (object: T) => boolean },
+  ): Promise<ObjectResult<T>> {
+    const retryEscalated = () => this.generateObjectOnce({ ...req, escalation: "low_confidence" });
+    const canEscalate = async () => !req.escalation && !req.pinRouteId &&
+      (await this.decideEscalation({ ...req, escalation: "low_confidence" })) !== null;
+    let result: ObjectResult<T>;
+    try {
+      result = await this.generateObjectOnce(req);
+    } catch (e) {
+      if (e instanceof RoutingError && e.schemaFailure && (await canEscalate())) return retryEscalated();
+      throw e;
+    }
+    if (result.escalation === null && req.escalateIf?.(result.object) && (await canEscalate())) return retryEscalated();
+    return result;
+  }
+
+  private async generateObjectOnce<T>(req: GenerateRequest & { schema: z.ZodType<T>; schemaName?: string }): Promise<ObjectResult<T>> {
     const jsonSchema = z.toJSONSchema(req.schema, { target: "draft-2020-12" }) as Record<string, unknown>;
     return this.run(
       req,
@@ -55,10 +100,10 @@ export class AIClient {
         try {
           parsed = JSON.parse(r.text);
         } catch {
-          throw new ProviderError(`${r.provider}: response was not valid JSON`, r.provider, true);
+          throw new ProviderError(`${r.provider}: response was not valid JSON`, r.provider, true, undefined, true);
         }
         const result = req.schema.safeParse(parsed);
-        if (!result.success) throw new ProviderError(`${r.provider}: response did not match schema`, r.provider, true);
+        if (!result.success) throw new ProviderError(`${r.provider}: response did not match schema`, r.provider, true, undefined, true);
         const { text: _text, ...rest } = r;
         return { ...rest, object: result.data };
       },
@@ -70,8 +115,9 @@ export class AIClient {
     tier: string,
     sensitivity: DataSensitivity = "normal",
     pinRouteId?: string,
+    data?: RouteData,
   ): Promise<{ chain: ResolvedRoute[]; skipped: string[] }> {
-    const { providers, routes } = await this.opts.routes.load();
+    const { providers, routes } = data ?? (await this.opts.routes.load());
     const byId = new Map(routes.map((r) => [r.id, r]));
     const providerById = new Map(providers.map((p) => [p.id, p]));
     const start = pinRouteId ? byId.get(pinRouteId) : routes.find((r) => r.tier === tier && r.active);
@@ -96,17 +142,38 @@ export class AIClient {
     return { chain, skipped };
   }
 
+  /**
+   * Decide whether this request goes to the escalation route. Only an enabled
+   * reason escalates: an explicit one from the caller, or "long_document"
+   * detected from the input size. Everything else stays on the default model.
+   */
+  async decideEscalation(req: GenerateRequest, data?: RouteData): Promise<EscalationReason | null> {
+    if (req.pinRouteId || req.tier === "mock") return null;
+    const policy = escalationPolicy((data ?? (await this.opts.routes.load())).routes);
+    if (!policy) return null;
+    const inputChars = (req.system?.length ?? 0) + req.messages.reduce((n, m) => n + m.content.length, 0);
+    const reason = req.escalation
+      ?? (policy.longInputChars !== undefined && inputChars > policy.longInputChars ? "long_document" : null);
+    return reason && policy.reasons.includes(reason) ? reason : null;
+  }
+
   private async run<R>(
     req: GenerateRequest,
     invoke: (adapter: NonNullable<ReturnType<typeof getAdapter>>, call: AdapterCall) => Promise<{ text: string; usage: GenerateResult["usage"]; finishReason: string }>,
     finish: (r: GenerateResult) => R,
   ): Promise<R> {
-    const { chain, skipped } = await this.plan(req.tier, req.sensitivity ?? "normal", req.pinRouteId);
+    const data = await this.opts.routes.load();
+    const escalation = await this.decideEscalation(req, data);
+    // Escalated requests start on the stronger model; its fallback leads back to the default model.
+    const tier = escalation ? ESCALATION_TIER : req.tier;
+    const { chain, skipped } = await this.plan(tier, req.sensitivity ?? "normal", req.pinRouteId, data);
     if (chain.length === 0) {
-      throw new RoutingError(`No eligible AI route for tier "${req.tier}"`, skipped);
+      throw new RoutingError(`No eligible AI route for tier "${tier}"`, skipped);
     }
+    const purpose = escalation ? `${req.purpose}#escalated:${escalation}` : req.purpose;
     const tried: string[] = [];
     const errors: string[] = [...skipped];
+    let schemaFailure = false;
     for (const { route, provider } of chain) {
       const adapter = getAdapter(provider.provider)!;
       const limit = this.limiter.tryAcquire(`${provider.id}:${route.modelId}`, provider.rateLimits ?? {});
@@ -124,7 +191,7 @@ export class AIClient {
         maxOutputTokens: req.maxOutputTokens ?? this.opts.defaultMaxOutputTokens ?? 4096,
         temperature: req.temperature,
         timeoutMs: req.timeoutMs ?? this.opts.defaultTimeoutMs ?? 60_000,
-        params: route.params ?? {},
+        params: providerParams(route.params),
       };
       const started = Date.now();
       try {
@@ -135,10 +202,11 @@ export class AIClient {
           model: route.modelId,
           latencyMs: Date.now() - started,
           fallbackFrom: tried,
+          escalation: route.tier === ESCALATION_TIER ? escalation : null,
         };
         const out = finish(result);
         await this.opts.usage?.record({
-          runId: req.runId, agentId: req.agentId, purpose: req.purpose, provider: provider.provider,
+          runId: req.runId, agentId: req.agentId, purpose, provider: provider.provider,
           modelId: route.modelId, inputTokens: raw.usage.inputTokens, outputTokens: raw.usage.outputTokens,
           latencyMs: result.latencyMs, status: "ok",
         });
@@ -146,15 +214,16 @@ export class AIClient {
       } catch (e) {
         const err = e instanceof ProviderError ? e : new ProviderError((e as Error).message, provider.provider, false);
         await this.opts.usage?.record({
-          runId: req.runId, agentId: req.agentId, purpose: req.purpose, provider: provider.provider,
+          runId: req.runId, agentId: req.agentId, purpose, provider: provider.provider,
           modelId: route.modelId, inputTokens: 0, outputTokens: 0, latencyMs: Date.now() - started,
           status: "error", error: err.message.slice(0, 500),
         });
         errors.push(err.message);
         tried.push(route.id);
+        schemaFailure ||= err.schemaFailure;
         if (!err.retryable) throw err;
       }
     }
-    throw new RoutingError(`All AI routes failed for tier "${req.tier}"`, errors);
+    throw new RoutingError(`All AI routes failed for tier "${tier}"`, errors, schemaFailure);
   }
 }

@@ -11,7 +11,7 @@ export async function providerOverview(ctx: ServiceContext) {
     ctx.db.select().from(schema.modelRoutes),
     ctx.db.select().from(schema.llmUsage).orderBy(desc(schema.llmUsage.createdAt)).limit(20),
   ]);
-  const plans = Object.fromEntries(await Promise.all(["fast", "standard", "deep"].map(async (t) => [t, await ctx.ai.plan(t)])));
+  const plans = Object.fromEntries(await Promise.all(["fast", "standard", "deep", "escalation"].map(async (t) => [t, await ctx.ai.plan(t)])));
   return {
     adapters: registeredProviders(),
     providers: providers.map((p) => ({ ...p, apiKeySet: p.apiKeyEnv ? Boolean(ctx.env[p.apiKeyEnv]) : null })),

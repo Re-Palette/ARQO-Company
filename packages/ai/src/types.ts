@@ -4,6 +4,30 @@ import type { DataSensitivity } from "@friday/core";
 /** Tier is what callers ask for. "mock" pins the deterministic mock route. */
 export type Tier = "fast" | "standard" | "deep" | "mock";
 
+/**
+ * Cost policy: every tier runs on the low-cost default model. The router moves
+ * a request to the "escalation" route (a stronger model) only for one of these
+ * reasons, and only if that reason is enabled in the route's params.
+ */
+export const ESCALATION_REASONS = [
+  "long_document",          // long input, detected automatically by size
+  "complex_reasoning",
+  "cross_source_analysis",
+  "ceo_deep_request",       // the CEO explicitly asked for deep processing
+  "low_confidence",         // the default model's answer was not good enough
+] as const;
+export type EscalationReason = (typeof ESCALATION_REASONS)[number];
+
+/** Route tier that holds the stronger model used for escalation. */
+export const ESCALATION_TIER = "escalation";
+
+/** Stored in model_routes.params.escalation of the escalation route. */
+export interface EscalationPolicy {
+  reasons: EscalationReason[];
+  /** Inputs longer than this (characters) count as long_document. */
+  longInputChars?: number;
+}
+
 export type ProviderKind = "gemini" | "claude" | "openai" | "openrouter" | "mock" | (string & {});
 
 export interface ChatMessage {
@@ -24,6 +48,8 @@ export interface GenerateRequest {
   timeoutMs?: number;
   /** Call exactly this route (no fallback). Used by the settings "connection test". */
   pinRouteId?: string;
+  /** Ask for the stronger model. Ignored unless the reason is enabled in the escalation route. */
+  escalation?: EscalationReason;
 }
 
 export interface Usage {
@@ -40,6 +66,8 @@ export interface GenerateResult {
   latencyMs: number;
   /** Route IDs tried before the one that answered (fallback trail). */
   fallbackFrom: string[];
+  /** Why the stronger model was used, or null when the default model served the request. */
+  escalation: EscalationReason | null;
 }
 
 export interface ObjectResult<T> extends Omit<GenerateResult, "text"> {
@@ -134,6 +162,8 @@ export class ProviderError extends Error {
     readonly provider: string,
     readonly retryable: boolean,
     readonly status?: number,
+    /** The model answered, but not in the requested structure. */
+    readonly schemaFailure = false,
   ) {
     super(message);
     this.name = "ProviderError";
@@ -143,7 +173,7 @@ export class ProviderError extends Error {
 /** No route can serve the request without breaking a rule (e.g. sensitivity). */
 export class RoutingError extends Error {
   readonly code = "NO_ELIGIBLE_ROUTE";
-  constructor(message: string, readonly reasons: string[]) {
+  constructor(message: string, readonly reasons: string[], readonly schemaFailure = false) {
     super(message);
     this.name = "RoutingError";
   }
